@@ -3,12 +3,13 @@ import requests
 
 import aiosqlite
 import discord
+import openai
 from discord import app_commands
 
 from settings import Settings
 
 def fetch_text_models():
-    venice_url = "https://api.venice.ai/api/v1/models"
+    venice_url = f"{Settings.VENICE_BASE_URL}/models"
     headers = {"Authorization": f"Bearer {Settings.VENICE_API_KEY}"}
     response = requests.request("GET", venice_url, headers=headers)
     return [(model["id"], model["model_spec"]["availableContextTokens"]) for model in json.loads(response.text)["data"] if model["type"] == "text"]
@@ -20,6 +21,7 @@ class MyClient(discord.Client):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.text_model_options = fetch_text_models()
+        self.venice_client = openai.AsyncOpenAI(base_url=Settings.VENICE_BASE_URL, api_key=Settings.VENICE_API_KEY)
 
     async def close(self):
         await self.con.close()
@@ -30,7 +32,18 @@ class MyClient(discord.Client):
                 return
             
             if client.user.mentioned_in(message):
-                await message.channel.send("Hello!")
+                async with message.channel.typing():
+                    chat_completion = await self.venice_client.chat.completions.create(
+                        messages=[{
+                            "role": "system",
+                            "content": f"{Settings.DEFAULT_SYSTEM_PROMPT}\nThe current user is {message.author.nick}."
+                        }, {
+                            "role": "user",
+                            "content": message.content
+                        }],
+                        model=Settings.DEFAULT_TEXT_MODEL
+                    )
+                    await message.channel.send(chat_completion.choices[0].message.content)
 
     async def on_ready(self):
         print(f"Logged in as {client.user}!")
