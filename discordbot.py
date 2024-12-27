@@ -1,5 +1,6 @@
 import json
 import requests
+from datetime import datetime
 
 import aiosqlite
 import discord
@@ -31,18 +32,41 @@ class MyClient(discord.Client):
             if message.author == client.user:
                 return
             
-            if client.user.mentioned_in(message):
+            if client.user.mentioned_in(message) or (message.reference is not None and message.reference.resolved.author == client.user):
+                if message.content.startswith(f"<@{client.user.id}>"):
+                    usermessage = message.content.split(f"<@{client.user.id}>", 1)[1].strip()
+                else:
+                    usermessage = message.content
                 async with message.channel.typing():
+                    modelcursor = await self.con.execute("SELECT text_model FROM settings WHERE guild_id = ? AND member_id = ? LIMIT 1", (message.guild.id, message.author.id))
+                    model = await modelcursor.fetchone()
+                    await modelcursor.close()
+                    if model:
+                        model = model[0]
+                    historycursor = await self.con.execute("SELECT role, message FROM conversation_history WHERE guild_id = ? AND member_id = ? ORDER BY timestamp DESC", (message.guild.id, message.author.id))
+                    rows = await historycursor.fetchall()
+                    await historycursor.close()
+                    rows.reverse()
+                    await self.con.execute("INSERT INTO conversation_history (guild_id, member_id, role, message) VALUES (?, ?, ?, ?)", (message.guild.id, message.author.id, "user", usermessage))
+                    messages = [{
+                        "role": "system",
+                        "content": f"{Settings.DEFAULT_SYSTEM_PROMPT}\nThe current user is {message.author.nick}."
+                    }]
+                    for (role, content) in rows:
+                        messages.append({
+                            "role": role,
+                            "content": content
+                        })
+                    messages.append({
+                        "role": "user",
+                        "content": usermessage
+                    })
                     chat_completion = await self.venice_client.chat.completions.create(
-                        messages=[{
-                            "role": "system",
-                            "content": f"{Settings.DEFAULT_SYSTEM_PROMPT}\nThe current user is {message.author.nick}."
-                        }, {
-                            "role": "user",
-                            "content": message.content
-                        }],
-                        model=Settings.DEFAULT_TEXT_MODEL
+                        messages = messages,
+                        model = model if model else Settings.DEFAULT_TEXT_MODEL
                     )
+                    await self.con.execute("INSERT INTO conversation_history (guild_id, member_id, role, message) VALUES (?, ?, ?, ?)", (message.guild.id, message.author.id, "assistant", chat_completion.choices[0].message.content))
+                    await self.con.commit()
                     await message.channel.send(chat_completion.choices[0].message.content)
 
     async def on_ready(self):
@@ -52,7 +76,8 @@ class MyClient(discord.Client):
         await self.tree.sync(guild=discord.Object(id=Settings.SERVER_ID))
         print("Commands synced!")
         self.con = await aiosqlite.connect("settings_db.db")
-        await self.con.execute("CREATE TABLE IF NOT EXISTS settings (guild_id, member_id, text_model, image_model, system_prompt, PRIMARY KEY (guild_id, member_id));")
+        await self.con.execute("CREATE TABLE IF NOT EXISTS settings (guild_id, member_id, text_model, image_model, system_prompt, context_mode, cur_convo, convos, PRIMARY KEY (guild_id, member_id));")
+        await self.con.execute("CREATE TABLE IF NOT EXISTS conversation_history (guild_id, member_id, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, role, message, conversation_id, PRIMARY KEY (guild_id, member_id, timestamp));")
         await self.con.commit()
         print("Database initialized!")
 
