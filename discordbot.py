@@ -1,6 +1,5 @@
 import json
 import requests
-from datetime import datetime
 
 import aiosqlite
 import discord
