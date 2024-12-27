@@ -7,6 +7,9 @@ import discord
 import openai
 from discord import app_commands
 
+from components.conversation_manager import ChooseConversationView
+from components.personality_manager import ChoosePersonalityView
+from components.text_model_manager import ChooseTextModelView
 from settings import Settings
 
 def convert_snowflake_to_timestamp(snowflake):
@@ -144,117 +147,15 @@ class MyClient(discord.Client):
         print("Database initialized!")
 
 client = MyClient()
-
-class ChooseTextModel(discord.ui.Select):
-    def __init__(self):
-        options=[discord.SelectOption(label=model[0]) for model in client.text_model_options]
-        super().__init__(placeholder="Select a text model", options=options, row=0)
-    async def callback(self, interaction: discord.Interaction):
-        await client.con.execute("""
-            INSERT INTO settings (guild_id, member_id, text_model) VALUES (?, ?, ?)
-            ON CONFLICT (guild_id, member_id)
-            DO UPDATE SET text_model = excluded.text_model;
-        """, (interaction.guild.id, interaction.user.id, self.values[0]))
-        await client.con.commit()
-        await interaction.response.send_message(f"Selected model: {self.values[0]}", ephemeral=True)
-
-class ChooseTextModelView(discord.ui.View):
-    def __init__(self, *, timeout=180):
-        super().__init__(timeout=timeout)
-        self.add_item(ChooseTextModel())
-
-class ChooseConversation(discord.ui.Select):
-    def __init__(self, convos):
-        options = [discord.SelectOption(label=str(convo)) for convo in convos]
-        super().__init__(placeholder="Select a conversation", options=options, row=0)
-    async def callback(self, interaction: discord.Interaction):
-        await client.con.execute("""
-            INSERT INTO settings (guild_id, member_id, cur_convo) VALUES (?, ?, ?)
-            ON CONFLICT (guild_id, member_id)
-            DO UPDATE SET cur_convo = excluded.cur_convo;
-        """, (interaction.guild.id, interaction.user.id, self.values[0]))
-        await client.con.commit()
-        await interaction.response.send_message(f"Selected conversation: {self.values[0]}", ephemeral=True)
-
-class AddNewConversation(discord.ui.Button):
-    def __init__(self, convos):
-        super().__init__(style=discord.ButtonStyle.primary, label="Add new conversation")
-        self.convos = convos
-    async def callback(self, interaction: discord.Interaction):
-        convo_num = len(self.convos)
-        while convo_num in self.convos:
-            convo_num += 1
-        self.convos.append(f"convo{convo_num}")
-        await client.con.execute("""
-            INSERT INTO settings (guild_id, member_id, convos) VALUES (?, ?, ?)
-            ON CONFLICT (guild_id, member_id)
-            DO UPDATE SET convos = excluded.convos;
-        """, (interaction.guild.id, interaction.user.id, json.dumps(self.convos)))
-        await client.con.execute("""
-            INSERT INTO settings (guild_id, member_id, cur_convo) VALUES (?, ?, ?)
-            ON CONFLICT (guild_id, member_id)
-            DO UPDATE SET cur_convo = excluded.cur_convo;
-        """, (interaction.guild.id, interaction.user.id, f"convo{convo_num}"))
-        await client.con.commit()
-        await interaction.response.send_message(f"Added new conversation: convo{convo_num}, and set as current conversation", ephemeral=True)
-
-class ChooseConversationView(discord.ui.View):
-    def __init__(self, convos, *, timeout=180):
-        super().__init__(timeout=timeout)
-        self.add_item(ChooseConversation(convos))
-        self.add_item(AddNewConversation(convos))
-
-class ChoosePersonality(discord.ui.Select):
-    def __init__(self, personalities):
-        options = [discord.SelectOption(label=personality) for personality in personalities]
-        super().__init__(placeholder="Select a personality module", options=options, row=0)
-    async def callback(self, interaction: discord.Interaction):
-        await client.con.execute("""
-            INSERT INTO settings (guild_id, member_id, personality) VALUES (?, ?, ?)
-            ON CONFLICT (guild_id, member_id)
-            DO UPDATE SET personality = excluded.personality;
-        """, (interaction.guild.id, interaction.user.id, self.values[0]))
-        await client.con.commit()
-        await interaction.response.send_message(f"Selected personality module: {self.values[0]}", ephemeral=True)
-
-class AddNewPersonalityModal(discord.ui.Modal, title='New Personality'):
-    name = discord.ui.TextInput(label='Personality Name', placeholder='Enter a name for the personality module')
-    desc = discord.ui.TextInput(label='Personality Description', placeholder='Enter a description for the personality module', style=discord.TextStyle.long)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await client.con.execute("""
-            INSERT INTO personalities (guild_id, member_id, personality_name, personality_desc) VALUES (?, ?, ?, ?)
-            ON CONFLICT (guild_id, member_id, personality_name)
-            DO UPDATE SET personality_desc = excluded.personality_desc;
-        """, (interaction.guild.id, interaction.user.id, self.name.value, self.desc.value))
-        await client.con.commit()
-        await interaction.response.send_message(f"Added new personality module: {self.name.value}", ephemeral=True)
-    
-    async def on_error(self, interaction: discord.Interaction, error: Exception):
-        await interaction.response.send_message(f"An error occurred: {error}", ephemeral=True)
-        traceback.print_exception(type(error), error, error.__traceback__)
-
-class AddNewPersonalityButton(discord.ui.Button):
-    def __init__(self):
-        super().__init__(style=discord.ButtonStyle.primary, label="Add new personality module")
-
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_modal(AddNewPersonalityModal())
-
-class ChoosePersonalityView(discord.ui.View):
-    def __init__(self, personalities, *, timeout=180):
-        super().__init__(timeout=timeout)
-        self.add_item(ChoosePersonality(personalities))
-        self.add_item(AddNewPersonalityButton())
         
 @client.tree.command(description="Select a text model", guild=discord.Object(id=Settings.SERVER_ID))
 async def choose_text_model(interaction: discord.Interaction):
-    await interaction.response.send_message("Select a text model", view=ChooseTextModelView(), ephemeral=True)
+    await interaction.response.send_message("Select a text model", view=ChooseTextModelView(client), ephemeral=True)
 
 @client.tree.command(description="Select a conversation", guild=discord.Object(id=Settings.SERVER_ID))
 async def choose_conversation(interaction: discord.Interaction):
     convos = await fetch_conversations(interaction.guild.id, interaction.user.id, client)
-    await interaction.response.send_message("Select a conversation", view=ChooseConversationView(convos), ephemeral=True)
+    await interaction.response.send_message("Select a conversation", view=ChooseConversationView(client, convos), ephemeral=True)
 
 @client.tree.command(description="Toggle context mode", guild=discord.Object(id=Settings.SERVER_ID))
 async def toggle_context_mode(interaction: discord.Interaction):
@@ -285,6 +186,6 @@ async def choose_personality(interaction: discord.Interaction):
             (interaction.guild.id, interaction.user.id, "None", "Default personality module"))
     else:
         personalities = [personality[0] for personality in personalities]
-    await interaction.response.send_message("Select a personality module", view=ChoosePersonalityView(personalities), ephemeral=True)
+    await interaction.response.send_message("Select a personality module", view=ChoosePersonalityView(client, personalities), ephemeral=True)
 
 client.run(Settings.DISCORD_API_KEY)
