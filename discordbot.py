@@ -205,4 +205,21 @@ async def choose_conversation(interaction: discord.Interaction):
     convos = await fetch_conversations(interaction.guild.id, interaction.user.id, client)
     await interaction.response.send_message("Select a conversation", view=ChooseConversationView(convos), ephemeral=True)
 
+@client.tree.command(description="Toggle context mode", guild=discord.Object(id=Settings.SERVER_ID))
+async def toggle_context_mode(interaction: discord.Interaction):
+    modecursor = await client.con.execute("SELECT context_mode FROM settings WHERE guild_id = ? AND member_id = ? LIMIT 1", (interaction.guild.id, interaction.user.id))
+    mode = await modecursor.fetchone()
+    await modecursor.close()
+    if mode[0] == "focus":
+        mode = "aware"
+    else:
+        mode = "focus"
+    await client.con.execute("""
+        INSERT INTO settings (guild_id, member_id, context_mode) VALUES (?, ?, ?)
+        ON CONFLICT (guild_id, member_id)
+        DO UPDATE SET context_mode = excluded.context_mode;
+    """, (interaction.guild.id, interaction.user.id, mode))
+    await client.con.commit()
+    await interaction.response.send_message(f"Context mode toggled to {mode}", ephemeral=True)
+
 client.run(Settings.DISCORD_API_KEY)
