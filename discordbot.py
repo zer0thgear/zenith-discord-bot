@@ -50,24 +50,20 @@ class MyClient(discord.Client):
                 else:
                     usermessage = message.content
                 async with message.channel.typing():
-                    modelcursor = await self.con.execute("SELECT text_model FROM settings WHERE guild_id = ? AND member_id = ? LIMIT 1", (message.guild.id, message.author.id))
-                    model = await modelcursor.fetchone()
-                    await modelcursor.close()
-                    if model:
-                        model = model[0]
-                    convocursor = await self.con.execute("SELECT cur_convo FROM settings WHERE guild_id = ? AND member_id = ? LIMIT 1", (message.guild.id, message.author.id))
-                    cur_convo = await convocursor.fetchone()
-                    await convocursor.close()
-                    if cur_convo:
-                        cur_convo = cur_convo[0]
+                    settingscursor = await self.con.execute("SELECT text_model, cur_convo, context_mode FROM settings WHERE guild_id = ? AND member_id = ? LIMIT 1", (message.guild.id, message.author.id))
+                    settingsrow = await settingscursor.fetchone()
+                    if settingsrow:
+                        model, cur_convo, mode = settingsrow
                     else:
+                        model = Settings.DEFAULT_TEXT_MODEL
                         cur_convo = "convo0"
-                    modecursor = await self.con.execute("SELECT context_mode FROM settings WHERE guild_id = ? AND member_id = ? LIMIT 1", (message.guild.id, message.author.id))
-                    mode = await modecursor.fetchone()
-                    await modecursor.close()
-                    if mode:
-                        mode = mode[0]
-                    else:
+                        mode = "focus"
+                    await settingscursor.close()
+                    if not model:
+                        model = Settings.DEFAULT_TEXT_MODEL
+                    if not cur_convo:
+                        cur_convo = "convo0"
+                    if not mode:
                         mode = "focus"
                     historycursor = await self.con.execute("SELECT timestamp, role, message FROM conversation_history WHERE guild_id = ? AND member_id = ? AND conversation_id = ? ORDER BY timestamp DESC LIMIT ?", (message.guild.id, message.author.id, cur_convo, Settings.DB_CONTEXT_LIMIT))
                     rows = await historycursor.fetchall()
