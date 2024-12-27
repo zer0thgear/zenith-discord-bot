@@ -130,8 +130,9 @@ class MyClient(discord.Client):
         await self.tree.sync(guild=discord.Object(id=Settings.SERVER_ID))
         print("Commands synced!")
         self.con = await aiosqlite.connect("settings_db.db")
-        await self.con.execute("CREATE TABLE IF NOT EXISTS settings (guild_id, member_id, text_model, image_model, system_prompt, context_mode, cur_convo, convos, PRIMARY KEY (guild_id, member_id));")
+        await self.con.execute("CREATE TABLE IF NOT EXISTS settings (guild_id, member_id, text_model, image_model, system_prompt, context_mode, cur_convo, convos, personality, PRIMARY KEY (guild_id, member_id));")
         await self.con.execute("CREATE TABLE IF NOT EXISTS conversation_history (guild_id, member_id, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, role, message, conversation_id, PRIMARY KEY (guild_id, member_id, timestamp));")
+        await self.con.execute("CREATE TABLE IF NOT EXISTS personalities (guild_id, member_id, personality_name, personality_desc, PRIMARY KEY (guild_id, member_id));")
         await self.con.commit()
         print("Database initialized!")
 
