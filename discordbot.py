@@ -62,7 +62,14 @@ class MyClient(discord.Client):
                         cur_convo = cur_convo[0]
                     else:
                         cur_convo = "convo0"
-                    historycursor = await self.con.execute("SELECT role, message FROM conversation_history WHERE guild_id = ? AND member_id = ? AND conversation_id = ? ORDER BY timestamp DESC", (message.guild.id, message.author.id, cur_convo))
+                    modecursor = await self.con.execute("SELECT context_mode FROM settings WHERE guild_id = ? AND member_id = ? LIMIT 1", (message.guild.id, message.author.id))
+                    mode = await modecursor.fetchone()
+                    await modecursor.close()
+                    if mode:
+                        mode = mode[0]
+                    else:
+                        mode = "focus"
+                    historycursor = await self.con.execute("SELECT timestamp, role, message FROM conversation_history WHERE guild_id = ? AND member_id = ? AND conversation_id = ? ORDER BY timestamp DESC LIMIT ?", (message.guild.id, message.author.id, cur_convo, Settings.DB_CONTEXT_LIMIT))
                     rows = await historycursor.fetchall()
                     await historycursor.close()
                     rows.reverse()
@@ -71,11 +78,39 @@ class MyClient(discord.Client):
                         "role": "system",
                         "content": f"{Settings.DEFAULT_SYSTEM_PROMPT}\nThe current user is {message.author.nick}."
                     }]
-                    for (role, content) in rows:
+                    if mode == "aware":
                         messages.append({
-                            "role": role,
-                            "content": content
+                            "role": "system",
+                            "content": "For additional context, ambient messages from the current Discord channel have been included. Messages not from the current user will be prepended by (Ambient) [Username]: to indicate that a different user spoke these messages."
                         })
+                        used_timestamps = set([timestamp for (timestamp, _, _) in rows])
+                        ambient_msgs = [(convert_snowflake_to_timestamp(message.id), message.author.display_name, message.content) async for message in message.channel.history(limit=Settings.CHANNEL_CONTEXT_LIMIT, before=message)]
+                        pruned_ambient_msgs = [(timestamp, author, content) for (timestamp, author, content) in ambient_msgs if timestamp not in used_timestamps]
+                        if len(pruned_ambient_msgs) > 0:
+                            rows = pruned_ambient_msgs + rows
+                            rows = sorted(rows, key=lambda x: x[0])
+                        for (_, author, content) in rows:
+                            if author == message.author.nick or author == "user" or author == message.author.name:
+                                messages.append({
+                                    "role": "user",
+                                    "content": content
+                                })
+                            elif author == client.user.display_name or author == "assistant":
+                                messages.append({
+                                    "role": "assistant",
+                                    "content": content
+                                })
+                            else:
+                                messages.append({
+                                    "role": "system",
+                                    "content": f"(Ambient) {author}: {content}"
+                                })
+                    else:
+                        for (_, role, content) in rows:
+                            messages.append({
+                                "role": role,
+                                "content": content
+                            })
                     messages.append({
                         "role": "user",
                         "content": usermessage
