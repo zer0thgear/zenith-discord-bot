@@ -19,5 +19,5 @@ Zenith rolls her eyes at the banal request. "Seriously? You can't google that yo
     SERVER_ID = os.getenv("SERVER_ID")
     VENICE_API_KEY = os.getenv("VENICE_API_KEY")
     VENICE_BASE_URL = "https://api.venice.ai/api/v1"
-    CHANNEL_CONTEXT_LIMIT = 50
+    CHANNEL_CONTEXT_LIMIT = 20
     DB_CONTEXT_LIMIT = 50
