@@ -1,5 +1,6 @@
 import json
 import requests
+import traceback
 
 import aiosqlite
 import discord
@@ -111,9 +112,11 @@ class MyClient(discord.Client):
                                 "content": content
                             })
                     if personality != "None":
+                        personalitycursor = await self.con.execute("SELECT personality_desc FROM personalities WHERE guild_id = ? AND member_id = ? AND personality_name = ? LIMIT 1", (message.guild.id, message.author.id, personality))
+                        personality_desc = await personalitycursor.fetchone()
                         messages.append({
                             "role": "system",
-                            "content": f"Current Personality Module: {personality}"
+                            "content": f"Current Personality Module: {personality_desc[0]}"
                         })
                     messages.append({
                         "role": "user",
@@ -136,7 +139,7 @@ class MyClient(discord.Client):
         self.con = await aiosqlite.connect("settings_db.db")
         await self.con.execute("CREATE TABLE IF NOT EXISTS settings (guild_id, member_id, text_model, image_model, system_prompt, context_mode, cur_convo, convos, personality, PRIMARY KEY (guild_id, member_id));")
         await self.con.execute("CREATE TABLE IF NOT EXISTS conversation_history (guild_id, member_id, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP, role, message, conversation_id, PRIMARY KEY (guild_id, member_id, timestamp));")
-        await self.con.execute("CREATE TABLE IF NOT EXISTS personalities (guild_id, member_id, personality_name, personality_desc, PRIMARY KEY (guild_id, member_id));")
+        await self.con.execute("CREATE TABLE IF NOT EXISTS personalities (guild_id, member_id, personality_name, personality_desc, PRIMARY KEY (guild_id, member_id, personality_name));")
         await self.con.commit()
         print("Database initialized!")
 
@@ -200,6 +203,49 @@ class ChooseConversationView(discord.ui.View):
         super().__init__(timeout=timeout)
         self.add_item(ChooseConversation(convos))
         self.add_item(AddNewConversation(convos))
+
+class ChoosePersonality(discord.ui.Select):
+    def __init__(self, personalities):
+        options = [discord.SelectOption(label=personality) for personality in personalities]
+        super().__init__(placeholder="Select a personality module", options=options, row=0)
+    async def callback(self, interaction: discord.Interaction):
+        await client.con.execute("""
+            INSERT INTO settings (guild_id, member_id, personality) VALUES (?, ?, ?)
+            ON CONFLICT (guild_id, member_id)
+            DO UPDATE SET personality = excluded.personality;
+        """, (interaction.guild.id, interaction.user.id, self.values[0]))
+        await client.con.commit()
+        await interaction.response.send_message(f"Selected personality module: {self.values[0]}", ephemeral=True)
+
+class AddNewPersonalityModal(discord.ui.Modal, title='New Personality'):
+    name = discord.ui.TextInput(label='Personality Name', placeholder='Enter a name for the personality module')
+    desc = discord.ui.TextInput(label='Personality Description', placeholder='Enter a description for the personality module', style=discord.TextStyle.long)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await client.con.execute("""
+            INSERT INTO personalities (guild_id, member_id, personality_name, personality_desc) VALUES (?, ?, ?, ?)
+            ON CONFLICT (guild_id, member_id, personality_name)
+            DO UPDATE SET personality_desc = excluded.personality_desc;
+        """, (interaction.guild.id, interaction.user.id, self.name.value, self.desc.value))
+        await client.con.commit()
+        await interaction.response.send_message(f"Added new personality module: {self.name.value}", ephemeral=True)
+    
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        await interaction.response.send_message(f"An error occurred: {error}", ephemeral=True)
+        traceback.print_exception(type(error), error, error.__traceback__)
+
+class AddNewPersonalityButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(style=discord.ButtonStyle.primary, label="Add new personality module")
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_modal(AddNewPersonalityModal())
+
+class ChoosePersonalityView(discord.ui.View):
+    def __init__(self, personalities, *, timeout=180):
+        super().__init__(timeout=timeout)
+        self.add_item(ChoosePersonality(personalities))
+        self.add_item(AddNewPersonalityButton())
         
 @client.tree.command(description="Select a text model", guild=discord.Object(id=Settings.SERVER_ID))
 async def choose_text_model(interaction: discord.Interaction):
@@ -226,5 +272,19 @@ async def toggle_context_mode(interaction: discord.Interaction):
     """, (interaction.guild.id, interaction.user.id, mode))
     await client.con.commit()
     await interaction.response.send_message(f"Context mode toggled to {mode}", ephemeral=True)
+
+@client.tree.command(description="Select a personality module", guild=discord.Object(id=Settings.SERVER_ID))
+async def choose_personality(interaction: discord.Interaction):
+    personalitiescursor = await client.con.execute("SELECT personality_name FROM personalities WHERE guild_id = ? AND member_id = ?", (interaction.guild.id, interaction.user.id))
+    personalities = await personalitiescursor.fetchall()
+    await personalitiescursor.close()
+    if len(personalities) == 0:
+        personalities = ["None"]
+        await client.con.execute("""
+            INSERT INTO personalities (guild_id, member_id, personality_name, personality_desc) VALUES (?, ?, ?, ?)""",
+            (interaction.guild.id, interaction.user.id, "None", "Default personality module"))
+    else:
+        personalities = [personality[0] for personality in personalities]
+    await interaction.response.send_message("Select a personality module", view=ChoosePersonalityView(personalities), ephemeral=True)
 
 client.run(Settings.DISCORD_API_KEY)
