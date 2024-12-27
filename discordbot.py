@@ -1,6 +1,5 @@
 import json
 import requests
-import traceback
 
 import aiosqlite
 import discord
@@ -11,6 +10,7 @@ from components.conversation_manager import ChooseConversationView
 from components.personality_manager import ChoosePersonalityView
 from components.text_model_manager import ChooseTextModelView
 from settings import Settings
+from utils.venice_utils import fetch_text_models, get_chat_completion
 
 def convert_snowflake_to_timestamp(snowflake):
     return (int(snowflake) >> 22) + 1420070400000
@@ -25,12 +25,6 @@ async def fetch_conversations(guild_id, member_id, client):
         convos = '["convo0"]'
     return json.loads(convos)
 
-def fetch_text_models():
-    venice_url = f"{Settings.VENICE_BASE_URL}/models"
-    headers = {"Authorization": f"Bearer {Settings.VENICE_API_KEY}"}
-    response = requests.request("GET", venice_url, headers=headers)
-    return [(model["id"], model["model_spec"]["availableContextTokens"]) for model in json.loads(response.text)["data"] if model["type"] == "text"]
-
 class MyClient(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
@@ -38,7 +32,6 @@ class MyClient(discord.Client):
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.text_model_options = fetch_text_models()
-        self.venice_client = openai.AsyncOpenAI(base_url=Settings.VENICE_BASE_URL, api_key=Settings.VENICE_API_KEY)
 
     async def close(self):
         await self.con.close()
@@ -125,12 +118,12 @@ class MyClient(discord.Client):
                         "role": "user",
                         "content": usermessage
                     })
-                    chat_completion = await self.venice_client.chat.completions.create(
+                    chat_completion = await get_chat_completion(
                         messages = messages,
                         model = model if model else Settings.DEFAULT_TEXT_MODEL
                     )
-                    out_msg = await message.channel.send(chat_completion.choices[0].message.content)
-                    await self.con.execute("INSERT INTO conversation_history (guild_id, member_id, timestamp, role, message, conversation_id) VALUES (?, ?, ?, ?, ?, ?)", (message.guild.id, message.author.id, convert_snowflake_to_timestamp(out_msg.id), "assistant", chat_completion.choices[0].message.content, cur_convo))
+                    out_msg = await message.channel.send(chat_completion)
+                    await self.con.execute("INSERT INTO conversation_history (guild_id, member_id, timestamp, role, message, conversation_id) VALUES (?, ?, ?, ?, ?, ?)", (message.guild.id, message.author.id, convert_snowflake_to_timestamp(out_msg.id), "assistant", chat_completion, cur_convo))
                     await self.con.commit()
 
     async def on_ready(self):
