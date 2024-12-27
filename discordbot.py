@@ -174,6 +174,8 @@ class AddNewConversation(discord.ui.Button):
         self.convos = convos
     async def callback(self, interaction: discord.Interaction):
         convo_num = len(self.convos)
+        while convo_num in self.convos:
+            convo_num += 1
         self.convos.append(f"convo{convo_num}")
         await client.con.execute("""
             INSERT INTO settings (guild_id, member_id, convos) VALUES (?, ?, ?)
