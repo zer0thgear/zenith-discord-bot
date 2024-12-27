@@ -50,14 +50,15 @@ class MyClient(discord.Client):
                 else:
                     usermessage = message.content
                 async with message.channel.typing():
-                    settingscursor = await self.con.execute("SELECT text_model, cur_convo, context_mode FROM settings WHERE guild_id = ? AND member_id = ? LIMIT 1", (message.guild.id, message.author.id))
+                    settingscursor = await self.con.execute("SELECT text_model, cur_convo, context_mode, personality FROM settings WHERE guild_id = ? AND member_id = ? LIMIT 1", (message.guild.id, message.author.id))
                     settingsrow = await settingscursor.fetchone()
                     if settingsrow:
-                        model, cur_convo, mode = settingsrow
+                        model, cur_convo, mode, personality = settingsrow
                     else:
                         model = Settings.DEFAULT_TEXT_MODEL
                         cur_convo = "convo0"
                         mode = "focus"
+                        personality = "None"
                     await settingscursor.close()
                     if not model:
                         model = Settings.DEFAULT_TEXT_MODEL
@@ -65,6 +66,8 @@ class MyClient(discord.Client):
                         cur_convo = "convo0"
                     if not mode:
                         mode = "focus"
+                    if not personality:
+                        personality = "None"
                     historycursor = await self.con.execute("SELECT timestamp, role, message FROM conversation_history WHERE guild_id = ? AND member_id = ? AND conversation_id = ? ORDER BY timestamp DESC LIMIT ?", (message.guild.id, message.author.id, cur_convo, Settings.DB_CONTEXT_LIMIT))
                     rows = await historycursor.fetchall()
                     await historycursor.close()
@@ -107,6 +110,11 @@ class MyClient(discord.Client):
                                 "role": role,
                                 "content": content
                             })
+                    if personality != "None":
+                        messages.append({
+                            "role": "system",
+                            "content": f"Current Personality Module: {personality}"
+                        })
                     messages.append({
                         "role": "user",
                         "content": usermessage
