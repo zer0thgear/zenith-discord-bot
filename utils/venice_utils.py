@@ -18,5 +18,4 @@ async def get_chat_completion(messages, model):
     async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.post(f"{Settings.VENICE_BASE_URL}/chat/completions", headers={"Authorization": f"Bearer {Settings.VENICE_API_KEY}"}, json={"messages": messages, "model": model, "venice_parameters": {"include_venice_system_prompt": False}})
         completion = response.json()
-        print(completion)
         return completion['choices'][0]['message']['content']
