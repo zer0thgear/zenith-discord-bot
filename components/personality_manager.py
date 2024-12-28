@@ -8,12 +8,7 @@ class ChoosePersonality(discord.ui.Select):
         options = [discord.SelectOption(label=personality) for personality in personalities]
         super().__init__(placeholder="Select a personality module", options=options, row=0)
     async def callback(self, interaction: discord.Interaction):
-        await self.client.con.execute("""
-            INSERT INTO settings (guild_id, member_id, personality) VALUES (?, ?, ?)
-            ON CONFLICT (guild_id, member_id)
-            DO UPDATE SET personality = excluded.personality;
-        """, (interaction.guild.id, interaction.user.id, self.values[0]))
-        await self.client.con.commit()
+        await self.client.DB_Engine.set_setting(interaction.guild.id, interaction.user.id, "personality", self.values[0])
         await interaction.response.send_message(f"Selected personality module: {self.values[0]}", ephemeral=True)
 
 class AddNewPersonalityModal(discord.ui.Modal, title='New Personality'):
@@ -25,12 +20,7 @@ class AddNewPersonalityModal(discord.ui.Modal, title='New Personality'):
     desc = discord.ui.TextInput(label='Personality Description', placeholder='Enter a description for the personality module', style=discord.TextStyle.long)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await self.client.con.execute("""
-            INSERT INTO personalities (guild_id, member_id, personality_name, personality_desc) VALUES (?, ?, ?, ?)
-            ON CONFLICT (guild_id, member_id, personality_name)
-            DO UPDATE SET personality_desc = excluded.personality_desc;
-        """, (interaction.guild.id, interaction.user.id, self.name.value, self.desc.value))
-        await self.client.con.commit()
+        await self.client.DB_Engine.add_personality(interaction.guild.id, interaction.user.id, self.name.value, self.desc.value)
         await interaction.response.send_message(f"Added new personality module: {self.name.value}", ephemeral=True)
     
     async def on_error(self, interaction: discord.Interaction, error: Exception):

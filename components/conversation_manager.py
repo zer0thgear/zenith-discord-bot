@@ -8,12 +8,7 @@ class ChooseConversation(discord.ui.Select):
         options = [discord.SelectOption(label=str(convo)) for convo in convos]
         super().__init__(placeholder="Select a conversation", options=options, row=0)
     async def callback(self, interaction: discord.Interaction):
-        await self.client.con.execute("""
-            INSERT INTO settings (guild_id, member_id, cur_convo) VALUES (?, ?, ?)
-            ON CONFLICT (guild_id, member_id)
-            DO UPDATE SET cur_convo = excluded.cur_convo;
-        """, (interaction.guild.id, interaction.user.id, self.values[0]))
-        await self.client.con.commit()
+        await self.client.DB_Engine.set_setting(interaction.guild.id, interaction.user.id, "cur_convo", self.values[0])
         await interaction.response.send_message(f"Selected conversation: {self.values[0]}", ephemeral=True)
 
 class AddNewConversation(discord.ui.Button):
@@ -26,17 +21,8 @@ class AddNewConversation(discord.ui.Button):
         while convo_num in self.convos:
             convo_num += 1
         self.convos.append(f"convo{convo_num}")
-        await self.client.con.execute("""
-            INSERT INTO settings (guild_id, member_id, convos) VALUES (?, ?, ?)
-            ON CONFLICT (guild_id, member_id)
-            DO UPDATE SET convos = excluded.convos;
-        """, (interaction.guild.id, interaction.user.id, json.dumps(self.convos)))
-        await self.client.con.execute("""
-            INSERT INTO settings (guild_id, member_id, cur_convo) VALUES (?, ?, ?)
-            ON CONFLICT (guild_id, member_id)
-            DO UPDATE SET cur_convo = excluded.cur_convo;
-        """, (interaction.guild.id, interaction.user.id, f"convo{convo_num}"))
-        await self.client.con.commit()
+        await self.client.DB_Engine.set_setting(interaction.guild.id, interaction.user.id, "convos", json.dumps(self.convos))
+        await self.client.DB_Engine.set_setting(interaction.guild.id, interaction.user.id, "cur_convo", f"convo{convo_num}")
         await interaction.response.send_message(f"Added new conversation: convo{convo_num}, and set as current conversation", ephemeral=True)
 
 class ChooseConversationView(discord.ui.View):
