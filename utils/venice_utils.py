@@ -5,8 +5,6 @@ import requests
 
 from settings import Settings
 
-#venice_client = openai.AsyncOpenAI(base_url=Settings.VENICE_BASE_URL, api_key=Settings.VENICE_API_KEY)
-
 def fetch_text_models():
     venice_url = f"{Settings.VENICE_BASE_URL}/models"
     headers = {"Authorization": f"Bearer {Settings.VENICE_API_KEY}"}
