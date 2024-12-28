@@ -129,4 +129,9 @@ async def choose_personality(interaction: discord.Interaction):
         personalities = [personality[0] for personality in personalities]
     await interaction.response.send_message("Select a personality module", view=ChoosePersonalityView(client, personalities), ephemeral=True)
 
+@client.tree.command(description="Get current settings", guild=discord.Object(id=Settings.SERVER_ID))
+async def get_settings(interaction: discord.Interaction):
+    model, cur_convo, mode, personality = await client.DB_Engine.get_settings(interaction.guild.id, interaction.user.id)
+    await interaction.response.send_message(f"Current settings:\nText model: {model}\nCurrent conversation: {cur_convo}\nContext mode: {mode}\nPersonality: {personality}", ephemeral=True)
+
 client.run(Settings.DISCORD_API_KEY)
