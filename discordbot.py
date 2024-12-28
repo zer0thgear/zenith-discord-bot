@@ -1,9 +1,7 @@
 import json
-import requests
 
 import aiosqlite
 import discord
-import openai
 from discord import app_commands
 
 from components.conversation_manager import ChooseConversationView
